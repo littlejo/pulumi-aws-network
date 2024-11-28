@@ -172,6 +172,45 @@ class TGW(pulumi.ComponentResource):
               opts=pulumi.ResourceOptions(parent=self.tgw),
           )
 
+class TGWATTACHMENT(pulumi.ComponentResource):
+   def __init__(self, name, peer_region="", peer_transit_gateway_id="", transit_gateway_id="", opts=None):
+       super().__init__('custom-aws:PeeringAttachment', name, None, opts)
+       self.tgw_peering = aws_tf.ec2transitgateway.PeeringAttachment(
+           name,
+           peer_region=peer_region,
+           peer_transit_gateway_id=peer_transit_gateway_id,
+           transit_gateway_id=transit_gateway_id,
+           opts=pulumi.ResourceOptions(parent=self),
+       )
+
+       peering = self.tgw_peering.id.apply(
+           lambda _: aws_tf.ec2transitgateway.get_peering_attachment(
+               filters=[
+                   {
+                       "name": "transit-gateway-id",
+                       "values": [self.tgw_peering.peer_transit_gateway_id],
+                   },
+                   {
+                       "name": "state",
+                       "values": ["pendingAcceptance", "available"],
+                   },
+               ],
+           )
+       )
+
+       accepter = peering.apply(lambda p: aws_tf.ec2transitgateway.PeeringAttachmentAccepter(
+           f"{self.tgw_peering._name}-accepter",
+           transit_gateway_attachment_id=p.id,
+           opts=pulumi.ResourceOptions(parent=self.tgw_peering),
+       ))
+
+       self.register_outputs({
+           'id': self.tgw_peering.id,
+           'peering_id': peering.id
+       })
+       self.id = self.tgw_peering.id
+       self.peering_id = peering.id
+
 pool_id = 0
 region = "us-east-1"
 azs = [f"{region}a", f"{region}b"]
@@ -195,14 +234,7 @@ for pool_id in range(4):
    tgw_ids += [tgw.id]
 
 
-tgw_peering = aws_tf.ec2transitgateway.PeeringAttachment(
-    "tgw-peering",
-    peer_region="us-east-1",
-    peer_transit_gateway_id=tgw_ids[0],
-    transit_gateway_id=tgw_ids[1],
-)
+tgw_peering = TGWATTACHMENT("tgw-peering", peer_region="us-east-1", peer_transit_gateway_id=tgw_ids[0], transit_gateway_id=tgw_ids[1])
 
-#example = aws_tf.ec2transitgateway.PeeringAttachmentAccepter("accepter",
-#    transit_gateway_attachment_id=tgw_peering,
-#    opts=pulumi.ResourceOptions(provider=awsp)
-#)
+pulumi.export("tgw-attach-id", tgw_peering.id)
+pulumi.export("tgw-attach-peering-id", tgw_peering.peering_id)
