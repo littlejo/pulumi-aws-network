@@ -128,8 +128,8 @@ class TGW(pulumi.ComponentResource):
        self.tgw = aws_tf.ec2transitgateway.TransitGateway(name,
                                                      description=description,
                                                      auto_accept_shared_attachments="enable",
-                                                     default_route_table_association="disable",
-                                                     default_route_table_propagation="disable",
+                                                     default_route_table_association="enable", #TOCHECK
+                                                     default_route_table_propagation="enable", #TOCHECK
                                                      opts=pulumi.ResourceOptions(parent=self),
                                                     )
        self._create_vpc_attachment(vpc_id, subnet_ids)
@@ -273,5 +273,18 @@ for i in range(1, 4):
 
     tgw_peerings.append(peering)
 
+i = 0
+
+for attachment in tgw_peerings:
+    vpc_cidr = f"172.31.{(i+1)*16}.0/20"
+    i += 1
+    aws_tf.ec2transitgateway.Route(f"staticRoute-${i}",
+                                           destination_cidr_block=vpc_cidr,
+                                           transit_gateway_attachment_id=attachment.id,
+                                           transit_gateway_route_table_id=tgw_rts[0],
+                                           #opts=pulumi.ResourceOptions(depends_on=tgw_peerings),
+             )
+
+
 pulumi.export("tgw-rts", tgw_rts)
-#pulumi.export("tgw-attach-peering-id", tgw_peering.peering_id)
+##pulumi.export("tgw-attach-peering-id", tgw_peering.peering_id)
