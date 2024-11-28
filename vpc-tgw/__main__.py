@@ -137,9 +137,11 @@ class TGW(pulumi.ComponentResource):
        self._create_vpc_route(route_table_id, cidrs)
 
        self.register_outputs({
-           'id': self.tgw.id
+           'id': self.tgw.id,
+           'rt_id': self.rt.id,
        })
        self.id = self.tgw.id
+       self.rt = self.rt.id
 
 
    def _create_vpc_attachment(self, vpc_id, subnet_ids):
@@ -152,14 +154,17 @@ class TGW(pulumi.ComponentResource):
        )
 
    def _create_route_table(self):
-       rt = aws_tf.ec2transitgateway.RouteTable(
+       self.rt = aws_tf.ec2transitgateway.RouteTable(
            f"{self.tgw._name}-route-table",
            transit_gateway_id=self.tgw.id,
+           tags={
+               "Name": f"{self.tgw._name}-route-table"
+           },
            opts=pulumi.ResourceOptions(parent=self.tgw)
        )
        aws_tf.ec2transitgateway.RouteTableAssociation(f"{self.tgw._name}-route-table",
            transit_gateway_attachment_id=self.tgw_attach.id,
-           transit_gateway_route_table_id=rt.id,
+           transit_gateway_route_table_id=self.rt.id,
            opts=pulumi.ResourceOptions(parent=self.tgw),
        )
 
@@ -173,7 +178,7 @@ class TGW(pulumi.ComponentResource):
           )
 
 class TGWATTACHMENT(pulumi.ComponentResource):
-   def __init__(self, name, peer_region="", peer_transit_gateway_id="", transit_gateway_id="", opts=None):
+   def __init__(self, name, peer_region="", peer_transit_gateway_id="", transit_gateway_id="", route_table_id="", opts=None):
        super().__init__('custom-aws:PeeringAttachment', name, None, opts)
        self.tgw_peering = aws_tf.ec2transitgateway.PeeringAttachment(
            name,
@@ -185,15 +190,15 @@ class TGWATTACHMENT(pulumi.ComponentResource):
                "Name": name,
            }
        )
-
        self._create_accepter()
+       self.id = self.tgw_peering.id
+       self.peering_id = self.peering.ids[0]
+       self._update_route_table(route_table_id)
 
        self.register_outputs({
-           'id': self.tgw_peering.id,
-           'peering_id': self.peering.id
+           'id': self.id,
+           'peering_id': self.peering_id,
        })
-       self.id = self.tgw_peering.id
-       self.peering_id = self.peering.id
 
 
    def _create_accepter(self):
@@ -206,7 +211,7 @@ class TGWATTACHMENT(pulumi.ComponentResource):
                    },
                    {
                        "name": "state",
-                       "values": ["pendingAcceptance"],
+                       "values": ["pendingAcceptance", "available"],
                    },
                ],
            )
@@ -218,6 +223,14 @@ class TGWATTACHMENT(pulumi.ComponentResource):
            opts=pulumi.ResourceOptions(parent=self.tgw_peering, ignore_changes=["transit_gateway_attachment_id"]),
        ))
 
+   def _update_route_table(self, route_table_id):
+       aws_tf.ec2transitgateway.Route(f"{self.tgw_peering._name}-staticRoute",
+                                              destination_cidr_block="0.0.0.0/0",
+                                              transit_gateway_attachment_id=self.peering_id,
+                                              transit_gateway_route_table_id=route_table_id,
+                                              opts=pulumi.ResourceOptions(parent=self.tgw_peering, depends_on=[self.accepter]),
+                )
+
 
 pool_id = 0
 region = "us-east-1"
@@ -225,6 +238,7 @@ azs = [f"{region}a", f"{region}b"]
 
 tgw_ids = []
 tgws = []
+tgw_rts = []
 
 for pool_id in range(4):
    vpc_cidr = f"172.31.{pool_id*16}.0/20"
@@ -242,6 +256,7 @@ for pool_id in range(4):
             )
    tgw_ids += [tgw.id]
    tgws += [tgw.tgw_attach]
+   tgw_rts += [tgw.rt]
 
 
 tgw_peerings = []
@@ -252,10 +267,11 @@ for i in range(1, 4):
         peer_region="us-east-1",
         peer_transit_gateway_id=tgw_ids[i],
         transit_gateway_id=tgw_ids[0],
+        route_table_id=tgw_rts[i],
         opts=pulumi.ResourceOptions(depends_on=tgws)
     )
 
     tgw_peerings.append(peering)
 
-#pulumi.export("tgw-attach-id", tgw_peering.id)
+pulumi.export("tgw-rts", tgw_rts)
 #pulumi.export("tgw-attach-peering-id", tgw_peering.peering_id)
