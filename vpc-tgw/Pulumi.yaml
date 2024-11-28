@@ -1,0 +1,6 @@
+name: vpc-tgw
+runtime:
+  name: python
+  options:
+    virtualenv: venv
+description: deploy some VPCs connected with tgws
