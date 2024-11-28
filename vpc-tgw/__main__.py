@@ -207,7 +207,6 @@ class TGWATTACHMENT(pulumi.ComponentResource):
                    {
                        "name": "state",
                        "values": ["pendingAcceptance"],
-                       #"values": ["pendingAcceptance", "available"],
                    },
                ],
            )
@@ -242,26 +241,21 @@ for pool_id in range(4):
              opts=pulumi.ResourceOptions(parent=null_vpc)
             )
    tgw_ids += [tgw.id]
-   tgws += [tgw]
+   tgws += [tgw.tgw_attach]
+
 
 tgw_peerings = []
-previous_acceptors = []
 
 for i in range(1, 4):
-    depends = previous_acceptors[:]
-    if i > 1:
-        depends.append(tgw_peerings[-1].accepter)
-
     peering = TGWATTACHMENT(
         f"tgw-peering-{i}",
         peer_region="us-east-1",
-        peer_transit_gateway_id=tgw_ids[0],
-        transit_gateway_id=tgw_ids[i],
-        opts=pulumi.ResourceOptions(depends_on=depends)
+        peer_transit_gateway_id=tgw_ids[i],
+        transit_gateway_id=tgw_ids[0],
+        opts=pulumi.ResourceOptions(depends_on=tgws)
     )
 
     tgw_peerings.append(peering)
-    previous_acceptors.append(peering.accepter)
 
 #pulumi.export("tgw-attach-id", tgw_peering.id)
 #pulumi.export("tgw-attach-peering-id", tgw_peering.peering_id)
