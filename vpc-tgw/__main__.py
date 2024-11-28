@@ -181,10 +181,24 @@ class TGWATTACHMENT(pulumi.ComponentResource):
            peer_transit_gateway_id=peer_transit_gateway_id,
            transit_gateway_id=transit_gateway_id,
            opts=pulumi.ResourceOptions(parent=self),
+           tags={
+               "Name": name,
+           }
        )
 
-       peering = self.tgw_peering.id.apply(
-           lambda _: aws_tf.ec2transitgateway.get_peering_attachment(
+       self._create_accepter()
+
+       self.register_outputs({
+           'id': self.tgw_peering.id,
+           'peering_id': self.peering.id
+       })
+       self.id = self.tgw_peering.id
+       self.peering_id = self.peering.id
+
+
+   def _create_accepter(self):
+       self.peering = self.tgw_peering.id.apply(
+           lambda _: aws_tf.ec2transitgateway.get_peering_attachments(
                filters=[
                    {
                        "name": "transit-gateway-id",
@@ -192,30 +206,26 @@ class TGWATTACHMENT(pulumi.ComponentResource):
                    },
                    {
                        "name": "state",
-                       "values": ["pendingAcceptance", "available"],
+                       "values": ["pendingAcceptance"],
+                       #"values": ["pendingAcceptance", "available"],
                    },
                ],
            )
        )
 
-       accepter = peering.apply(lambda p: aws_tf.ec2transitgateway.PeeringAttachmentAccepter(
+       self.accepter = self.peering.apply(lambda p: aws_tf.ec2transitgateway.PeeringAttachmentAccepter(
            f"{self.tgw_peering._name}-accepter",
-           transit_gateway_attachment_id=p.id,
-           opts=pulumi.ResourceOptions(parent=self.tgw_peering),
+           transit_gateway_attachment_id=p.ids[0] if p.ids else "",
+           opts=pulumi.ResourceOptions(parent=self.tgw_peering, ignore_changes=["transit_gateway_attachment_id"]),
        ))
 
-       self.register_outputs({
-           'id': self.tgw_peering.id,
-           'peering_id': peering.id
-       })
-       self.id = self.tgw_peering.id
-       self.peering_id = peering.id
 
 pool_id = 0
 region = "us-east-1"
 azs = [f"{region}a", f"{region}b"]
 
 tgw_ids = []
+tgws = []
 
 for pool_id in range(4):
    vpc_cidr = f"172.31.{pool_id*16}.0/20"
@@ -232,9 +242,26 @@ for pool_id in range(4):
              opts=pulumi.ResourceOptions(parent=null_vpc)
             )
    tgw_ids += [tgw.id]
+   tgws += [tgw]
 
+tgw_peerings = []
+previous_acceptors = []
 
-tgw_peering = TGWATTACHMENT("tgw-peering", peer_region="us-east-1", peer_transit_gateway_id=tgw_ids[0], transit_gateway_id=tgw_ids[1])
+for i in range(1, 4):
+    depends = previous_acceptors[:]
+    if i > 1:
+        depends.append(tgw_peerings[-1].accepter)
 
-pulumi.export("tgw-attach-id", tgw_peering.id)
-pulumi.export("tgw-attach-peering-id", tgw_peering.peering_id)
+    peering = TGWATTACHMENT(
+        f"tgw-peering-{i}",
+        peer_region="us-east-1",
+        peer_transit_gateway_id=tgw_ids[0],
+        transit_gateway_id=tgw_ids[i],
+        opts=pulumi.ResourceOptions(depends_on=depends)
+    )
+
+    tgw_peerings.append(peering)
+    previous_acceptors.append(peering.accepter)
+
+#pulumi.export("tgw-attach-id", tgw_peering.id)
+#pulumi.export("tgw-attach-peering-id", tgw_peering.peering_id)
