@@ -128,8 +128,8 @@ class TGW(pulumi.ComponentResource):
        self.tgw = aws_tf.ec2transitgateway.TransitGateway(name,
                                                      description=description,
                                                      auto_accept_shared_attachments="enable",
-                                                     default_route_table_association="enable", #TOCHECK
-                                                     default_route_table_propagation="enable", #TOCHECK
+                                                     default_route_table_association="disable",
+                                                     default_route_table_propagation="enable",
                                                      opts=pulumi.ResourceOptions(parent=self),
                                                     )
        self._create_vpc_attachment(vpc_id, subnet_ids)
