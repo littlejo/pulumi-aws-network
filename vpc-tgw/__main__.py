@@ -235,12 +235,13 @@ class TGWATTACHMENT(pulumi.ComponentResource):
 pool_id = 0
 region = "us-east-1"
 azs = [f"{region}a", f"{region}b"]
+vpc_number = 2
 
 tgw_ids = []
 tgws = []
 tgw_rts = []
 
-for pool_id in range(4):
+for pool_id in range(vpc_number):
    vpc_cidr = f"172.31.{pool_id*16}.0/20"
    cidrs = [f"172.31.{i * 16}.0/20" for i in range(0, 6) if i != pool_id]
    
@@ -262,7 +263,7 @@ for pool_id in range(4):
 tgw_peerings = []
 tgw_peerings_accepter = []
 
-for i in range(1, 4):
+for i in range(1, vpc_number):
     peering = TGWATTACHMENT(
         f"tgw-peering-{i}",
         peer_region="us-east-1",
@@ -275,14 +276,12 @@ for i in range(1, 4):
     tgw_peerings.append(peering)
     tgw_peerings_accepter.append(peering.accepter)
 
-i = 0
-
-for attachment in tgw_peerings:
-    vpc_cidr = f"172.31.{(i+1)*16}.0/20"
-    i += 1
+#for attachment in tgw_peerings:
+for i in range(1, vpc_number):
+    vpc_cidr = f"172.31.{i*16}.0/20"
     aws_tf.ec2transitgateway.Route(f"staticRoute-{i}",
                                            destination_cidr_block=vpc_cidr,
-                                           transit_gateway_attachment_id=attachment.id,
+                                           transit_gateway_attachment_id=tgw_peerings[i-1].id,
                                            transit_gateway_route_table_id=tgw_rts[0],
                                            opts=pulumi.ResourceOptions(depends_on=tgw_peerings_accepter),
              )
