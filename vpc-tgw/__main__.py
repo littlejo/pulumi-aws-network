@@ -167,6 +167,11 @@ class TGW(pulumi.ComponentResource):
            transit_gateway_route_table_id=self.rt.id,
            opts=pulumi.ResourceOptions(parent=self.tgw),
        )
+       aws_tf.ec2transitgateway.RouteTablePropagation(f"{self.tgw._name}-route-table",
+           transit_gateway_attachment_id=self.tgw_attach.id,
+           transit_gateway_route_table_id=self.rt.id,
+           opts=pulumi.ResourceOptions(parent=self.tgw),
+       )
 
    def _create_vpc_route(self, route_table_id, cidrs):
        for cidr in cidrs:
