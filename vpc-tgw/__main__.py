@@ -284,7 +284,7 @@ for attachment in tgw_peerings:
                                            destination_cidr_block=vpc_cidr,
                                            transit_gateway_attachment_id=attachment.id,
                                            transit_gateway_route_table_id=tgw_rts[0],
-                                           opts=pulumi.ResourceOptions(depends_on=tgw_peerings),
+                                           opts=pulumi.ResourceOptions(depends_on=tgw_peerings_accepter),
              )
 
 
