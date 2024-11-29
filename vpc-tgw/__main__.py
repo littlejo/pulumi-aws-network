@@ -129,7 +129,7 @@ class TGW(pulumi.ComponentResource):
                                                      description=description,
                                                      auto_accept_shared_attachments="enable",
                                                      default_route_table_association="disable",
-                                                     default_route_table_propagation="enable",
+                                                     default_route_table_propagation="disable",
                                                      opts=pulumi.ResourceOptions(parent=self),
                                                     )
        self._create_vpc_attachment(vpc_id, subnet_ids)
