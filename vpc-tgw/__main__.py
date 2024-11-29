@@ -235,6 +235,11 @@ class TGWATTACHMENT(pulumi.ComponentResource):
                                               transit_gateway_route_table_id=route_table_id,
                                               opts=pulumi.ResourceOptions(parent=self.tgw_peering, depends_on=[self.accepter]),
                 )
+       aws_tf.ec2transitgateway.RouteTableAssociation(f"{self.tgw_peering._name}-route-table",
+           transit_gateway_attachment_id=self.peering_id,
+           transit_gateway_route_table_id=route_table_id,
+           opts=pulumi.ResourceOptions(parent=self.tgw_peering, depends_on=[self.accepter]),
+       )
 
 
 pool_id = 0
@@ -281,7 +286,6 @@ for i in range(1, vpc_number):
     tgw_peerings.append(peering)
     tgw_peerings_accepter.append(peering.accepter)
 
-#for attachment in tgw_peerings:
 for i in range(1, vpc_number):
     vpc_cidr = f"172.31.{i*16}.0/20"
     aws_tf.ec2transitgateway.Route(f"staticRoute-{i}",
