@@ -294,6 +294,11 @@ for i in range(1, vpc_number):
                                            transit_gateway_route_table_id=tgw_rts[0],
                                            opts=pulumi.ResourceOptions(depends_on=tgw_peerings_accepter),
              )
+    aws_tf.ec2transitgateway.RouteTableAssociation(f"route-table-{i}",
+        transit_gateway_attachment_id=tgw_peerings[i-1].id,
+        transit_gateway_route_table_id=tgw_rts[0],
+        opts=pulumi.ResourceOptions(depends_on=tgw_peerings_accepter)
+    )
 
 
 pulumi.export("tgw-rts", tgw_rts)
