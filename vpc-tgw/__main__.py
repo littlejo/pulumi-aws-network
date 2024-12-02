@@ -4,10 +4,11 @@ import pulumi_aws as aws_tf
 from pulumi_command import local
 
 class VPC:
-   def __init__(self, name, cidr="10.0.0.0/16", azs=[], parent=None):
+   def __init__(self, name, cidr="10.0.0.0/16", azs=[], parent=None, provider=None):
        self.name = name
        self.cidr = cidr
        self.parent = parent
+       self.provider = provider
        self.create_vpc()
        new_prefix = int(cidr.split("/")[1])+2
        self.azs = azs
@@ -22,7 +23,7 @@ class VPC:
            cidr_block=self.cidr,
            enable_dns_hostnames=True,
            enable_dns_support=True,
-           opts=pulumi.ResourceOptions(parent=self.parent),
+           opts=pulumi.ResourceOptions(parent=self.parent, provider=self.provider),
            tags=tags
        )
 
@@ -47,7 +48,7 @@ class VPC:
                vpc_id=self.vpc.id,
                cidr_block=self.subnet_cidr[index].with_prefixlen,
                availability_zone=self.azs[index % 2],
-               opts=pulumi.ResourceOptions(parent=self.vpc),
+               opts=pulumi.ResourceOptions(parent=self.vpc, provider=self.provider),
                map_public_ip_on_launch=(name.startswith("subnet-public-")),
                tags={"Name": name + f"-{self.name}"},
            )
@@ -57,20 +58,20 @@ class VPC:
          "Name": self.name
        }
        nat_eip = aws_tf.ec2.Eip(f"vpc-eip-{self.name}",
-           opts = pulumi.ResourceOptions(parent=self.parent),
+           opts = pulumi.ResourceOptions(parent=self.parent, provider=self.provider),
 	   tags = tags,
        )
        self.nat_gw = aws_tf.ec2.NatGateway(f"vpc-nat-gw-{self.name}",
            allocation_id=nat_eip.id,
            subnet_id=self.subnets["subnet-public-0"],
 	   tags = tags,
-           opts = pulumi.ResourceOptions(parent=nat_eip)
+           opts = pulumi.ResourceOptions(parent=nat_eip, provider=self.provider)
        )
 
    def create_internet_gateway(self):
        self.igw = aws_tf.ec2.InternetGateway(f"vpc-igw-{self.name}",
                                                 vpc_id=self.vpc.id,
-                                                opts=pulumi.ResourceOptions(parent=self.parent))
+                                                opts=pulumi.ResourceOptions(parent=self.parent, provider=self.provider))
 
    def create_route_table(self, table_type):
        tags = {
@@ -82,7 +83,7 @@ class VPC:
 
        rt = aws_tf.ec2.RouteTable(f"vpc-rt-{table_type}-{self.name}",
                                         vpc_id=self.vpc.id,
-                                        opts=pulumi.ResourceOptions(parent=self.vpc),
+                                        opts=pulumi.ResourceOptions(parent=self.vpc, provider=self.provider),
                                         tags=tags,
                 )
 
@@ -91,19 +92,19 @@ class VPC:
                                  destination_cidr_block="0.0.0.0/0",
                                  gateway_id=gateway_id,
                                  nat_gateway_id=nat_gateway_id,
-                                 opts=pulumi.ResourceOptions(parent=rt)
+                                 opts=pulumi.ResourceOptions(parent=rt, provider=self.provider)
        )
 
        aws_tf.ec2.RouteTableAssociation(f"vpc-rt-assoc-{table_type}-{self.name}-1",
                                         subnet_id=self.subnets[f"subnet-{table_type}-0"],
                                         route_table_id=rt.id,
-                                        opts=pulumi.ResourceOptions(parent=rt)
+                                        opts=pulumi.ResourceOptions(parent=rt, provider=self.provider)
        )
 
        aws_tf.ec2.RouteTableAssociation(f"vpc-rt-assoc-{table_type}-{self.name}-2",
                                         subnet_id=self.subnets[f"subnet-{table_type}-1"],
                                         route_table_id=rt.id,
-                                        opts=pulumi.ResourceOptions(parent=rt)
+                                        opts=pulumi.ResourceOptions(parent=rt, provider=self.provider)
        )
        return rt
 
@@ -114,8 +115,8 @@ class VPC:
    def get_private_rt_table_id(self):
        return self.private_rt.id
 
-def create_vpc(null_vpc, cidr=""):
-    vpc = VPC(f"private-{region}-{pool_id}", azs=azs, parent=null_vpc, cidr=cidr)
+def create_vpc(null_vpc, cidr="", provider=None):
+    vpc = VPC(f"private-{region}-{pool_id}", azs=azs, parent=null_vpc, cidr=cidr, provider=provider)
     vpc.create_subnets()
     vpc.create_internet_gateway()
     vpc.create_nat_gateway()
@@ -130,8 +131,8 @@ class TGW(pulumi.ComponentResource):
                                                      auto_accept_shared_attachments="enable",
                                                      default_route_table_association="disable",
                                                      default_route_table_propagation="disable",
-                                                     opts=pulumi.ResourceOptions(parent=self),
-                                                    )
+                                                     opts=opts)
+       self.opts = opts
        self._create_vpc_attachment(vpc_id, subnet_ids)
        self._create_route_table()
        self._create_vpc_route(route_table_id, cidrs)
@@ -150,7 +151,7 @@ class TGW(pulumi.ComponentResource):
            subnet_ids=subnet_ids,
            transit_gateway_id=self.tgw.id,
            vpc_id=vpc_id,
-           opts=pulumi.ResourceOptions(parent=self.tgw)
+           opts=self.opts
        )
 
    def _create_route_table(self):
@@ -160,17 +161,17 @@ class TGW(pulumi.ComponentResource):
            tags={
                "Name": f"{self.tgw._name}-route-table"
            },
-           opts=pulumi.ResourceOptions(parent=self.tgw)
+           opts=self.opts
        )
        aws_tf.ec2transitgateway.RouteTableAssociation(f"{self.tgw._name}-route-table",
            transit_gateway_attachment_id=self.tgw_attach.id,
            transit_gateway_route_table_id=self.rt.id,
-           opts=pulumi.ResourceOptions(parent=self.tgw),
+           opts=self.opts,
        )
        aws_tf.ec2transitgateway.RouteTablePropagation(f"{self.tgw._name}-route-table",
            transit_gateway_attachment_id=self.tgw_attach.id,
            transit_gateway_route_table_id=self.rt.id,
-           opts=pulumi.ResourceOptions(parent=self.tgw),
+           opts=self.opts,
        )
 
    def _create_vpc_route(self, route_table_id, cidrs):
@@ -179,7 +180,7 @@ class TGW(pulumi.ComponentResource):
               route_table_id=route_table_id,
               destination_cidr_block=cidr,
               transit_gateway_id=self.tgw.id,
-              opts=pulumi.ResourceOptions(parent=self.tgw),
+              opts=self.opts,
           )
 
 class TGWATTACHMENT(pulumi.ComponentResource):
@@ -190,11 +191,12 @@ class TGWATTACHMENT(pulumi.ComponentResource):
            peer_region=peer_region,
            peer_transit_gateway_id=peer_transit_gateway_id,
            transit_gateway_id=transit_gateway_id,
-           opts=pulumi.ResourceOptions(parent=self),
+           opts=opts,
            tags={
                "Name": name,
            }
        )
+       self.peer_region=peer_region
        self._create_accepter()
        self.id = self.tgw_peering.id
        self.peering_id = self.peering.ids[0]
@@ -207,6 +209,7 @@ class TGWATTACHMENT(pulumi.ComponentResource):
 
 
    def _create_accepter(self):
+       self.aws_peer = aws_tf.Provider(f"aws-{self.peer_region}", region=self.peer_region)
        self.peering = self.tgw_peering.id.apply(
            lambda _: aws_tf.ec2transitgateway.get_peering_attachments(
                filters=[
@@ -219,13 +222,14 @@ class TGWATTACHMENT(pulumi.ComponentResource):
                        "values": ["pendingAcceptance", "available"],
                    },
                ],
+               opts=pulumi.InvokeOptions(provider=self.aws_peer)
            )
        )
 
        self.accepter = self.peering.apply(lambda p: aws_tf.ec2transitgateway.PeeringAttachmentAccepter(
            f"{self.tgw_peering._name}-accepter",
            transit_gateway_attachment_id=p.ids[0] if p.ids else "",
-           opts=pulumi.ResourceOptions(parent=self.tgw_peering, ignore_changes=["transit_gateway_attachment_id"]),
+           opts=pulumi.ResourceOptions(provider=self.aws_peer, parent=self.tgw_peering, ignore_changes=["transit_gateway_attachment_id"]),
        ))
 
    def _update_route_table(self, route_table_id):
@@ -233,18 +237,18 @@ class TGWATTACHMENT(pulumi.ComponentResource):
                                               destination_cidr_block="0.0.0.0/0",
                                               transit_gateway_attachment_id=self.peering_id,
                                               transit_gateway_route_table_id=route_table_id,
-                                              opts=pulumi.ResourceOptions(parent=self.tgw_peering, depends_on=[self.accepter]),
+                                              opts=pulumi.ResourceOptions(provider=self.aws_peer, parent=self.tgw_peering, depends_on=[self.accepter]),
                 )
        aws_tf.ec2transitgateway.RouteTableAssociation(f"{self.tgw_peering._name}-route-table",
            transit_gateway_attachment_id=self.peering_id,
            transit_gateway_route_table_id=route_table_id,
-           opts=pulumi.ResourceOptions(parent=self.tgw_peering, depends_on=[self.accepter]),
+           opts=pulumi.ResourceOptions(provider=self.aws_peer, parent=self.tgw_peering, depends_on=[self.accepter]),
        )
 
 
 pool_id = 0
-region = "us-east-1"
-azs = [f"{region}a", f"{region}b"]
+#region = "us-east-1"
+regions = ["us-west-2", "us-east-1"]
 vpc_number = 2
 
 tgw_ids = []
@@ -255,15 +259,19 @@ for pool_id in range(vpc_number):
    vpc_cidr = f"172.31.{pool_id*16}.0/20"
    cidrs = [f"172.31.{i * 16}.0/20" for i in range(0, 6) if i != pool_id]
    
+   region = regions[pool_id]
+
+   azs = [f"{region}a", f"{region}b"]
    null_vpc = local.Command(f"cmd-null-vpc-{pool_id}")
-   vpc = create_vpc(null_vpc, cidr=vpc_cidr)
+   aws = aws_tf.Provider(f"aws-{region}-{pool_id}", region=region, opts=pulumi.ResourceOptions(parent=null_vpc))
+   vpc = create_vpc(null_vpc, cidr=vpc_cidr, provider=aws)
    
    tgw = TGW(f"tgw-vpc-{pool_id}", 
              subnet_ids=vpc.get_subnet_ids(),
              vpc_id=vpc.get_vpc_id(),
              route_table_id=vpc.get_private_rt_table_id(),
              cidrs=cidrs,
-             opts=pulumi.ResourceOptions(parent=null_vpc)
+             opts=pulumi.ResourceOptions(parent=null_vpc, provider=aws)
             )
    tgw_ids += [tgw.id]
    tgws += [tgw.tgw_attach]
@@ -274,32 +282,37 @@ tgw_peerings = []
 tgw_peerings_accepter = []
 
 for i in range(1, vpc_number):
+    region = regions[0]
+    peer_region = regions[1]
+    aws = aws_tf.Provider(f"aws-{region}-{i}", region=region)
     peering = TGWATTACHMENT(
         f"tgw-peering-{i}",
-        peer_region="us-east-1",
+        peer_region=peer_region,
         peer_transit_gateway_id=tgw_ids[i],
         transit_gateway_id=tgw_ids[0],
         route_table_id=tgw_rts[i],
-        opts=pulumi.ResourceOptions(depends_on=tgws)
+        opts=pulumi.ResourceOptions(depends_on=tgws, provider=aws)
     )
 
     tgw_peerings.append(peering)
     tgw_peerings_accepter.append(peering.accepter)
 
 for i in range(1, vpc_number):
+    region = regions[0]
+    aws = aws_tf.Provider(f"aws-{region}-route-{i}", region=region)
     vpc_cidr = f"172.31.{i*16}.0/20"
     aws_tf.ec2transitgateway.Route(f"staticRoute-{i}",
                                            destination_cidr_block=vpc_cidr,
                                            transit_gateway_attachment_id=tgw_peerings[i-1].id,
                                            transit_gateway_route_table_id=tgw_rts[0],
-                                           opts=pulumi.ResourceOptions(depends_on=tgw_peerings_accepter),
+                                           opts=pulumi.ResourceOptions(depends_on=tgw_peerings_accepter, provider=aws),
              )
     aws_tf.ec2transitgateway.RouteTableAssociation(f"route-table-{i}",
         transit_gateway_attachment_id=tgw_peerings[i-1].id,
         transit_gateway_route_table_id=tgw_rts[0],
-        opts=pulumi.ResourceOptions(depends_on=tgw_peerings_accepter)
+        opts=pulumi.ResourceOptions(depends_on=tgw_peerings_accepter, provider=aws)
     )
 
 
-pulumi.export("tgw-rts", tgw_rts)
+#pulumi.export("tgw-rts", tgw_rts)
 ##pulumi.export("tgw-attach-peering-id", tgw_peering.peering_id)
