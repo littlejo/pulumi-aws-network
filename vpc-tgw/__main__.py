@@ -209,7 +209,7 @@ class TGWATTACHMENT(pulumi.ComponentResource):
 
 
    def _create_accepter(self):
-       self.aws_peer = aws_tf.Provider(f"aws-{self.peer_region}", region=self.peer_region)
+       self.aws_peer = aws_tf.Provider(f"aws-{self.tgw_peering._name}", region=self.peer_region)
        self.peering = self.tgw_peering.id.apply(
            lambda _: aws_tf.ec2transitgateway.get_peering_attachments(
                filters=[
@@ -248,8 +248,8 @@ class TGWATTACHMENT(pulumi.ComponentResource):
 
 pool_id = 0
 #region = "us-east-1"
-regions = ["us-west-2", "us-east-1"]
-vpc_number = 2
+regions = ["us-west-2", "us-east-1", "us-west-2"]
+vpc_number = len(regions)
 
 tgw_ids = []
 tgws = []
@@ -283,8 +283,8 @@ tgw_peerings_accepter = []
 
 for i in range(1, vpc_number):
     region = regions[0]
-    peer_region = regions[1]
-    aws = aws_tf.Provider(f"aws-{region}-{i}", region=region)
+    peer_region = regions[i]
+    aws = aws_tf.Provider(f"aws-attachment-{region}-{i}", region=region)
     peering = TGWATTACHMENT(
         f"tgw-peering-{i}",
         peer_region=peer_region,
@@ -312,7 +312,3 @@ for i in range(1, vpc_number):
         transit_gateway_route_table_id=tgw_rts[0],
         opts=pulumi.ResourceOptions(depends_on=tgw_peerings_accepter, provider=aws)
     )
-
-
-#pulumi.export("tgw-rts", tgw_rts)
-##pulumi.export("tgw-attach-peering-id", tgw_peering.peering_id)
